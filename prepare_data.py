@@ -86,5 +86,6 @@ def prepare_dataset(images, masks, mode, args):
     
     return np.asarray(IMAGE_ARRAY), np.asarray(MASK_ARRAY)
 
+
 if __name__ == '__main__':
     main()
