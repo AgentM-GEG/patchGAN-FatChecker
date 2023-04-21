@@ -24,9 +24,15 @@ def main():
     list_of_images = sorted(glob.glob('{}/*.jpg'.format(args.imgDir)))
     list_of_masks = sorted(glob.glob('{}/*.png'.format(args.maskDir)))
 
+    assert len(list_of_images) == len(list_of_masks),\
+        f"Number of images ({len(list_of_masks)}) does not match number of masks ({len(list_of_masks)})!"
+
     np.random.seed(args.randomseed)
     inds = np.arange(len(list_of_images)).astype(int)
     np.random.shuffle(inds)
+    train_ind_lim = int(len(list_of_images) * args.train_val_split)
+
+    print(f"Found {len(list_of_images)} images. Splitting to {train_ind_lim} for training and {len(list_of_images) - train_ind_lim} for testing.")
 
     list_of_images = np.array(list_of_images)[inds]
     list_of_masks = np.array(list_of_masks)[inds]
@@ -35,44 +41,38 @@ def main():
         os.makedirs(args.saveloc)
         print('Created Missing Directory {}'.format(args.saveloc))
 
-    print(args.saveloc)
-    train_imgs, train_masks = prepare_dataset(list_of_images, list_of_masks, 'training', args)
-    print('---> Training Image and Masks Generated with shape {}'.format(train_imgs.shape))
-
-    test_imgs, test_masks = prepare_dataset(list_of_images, list_of_masks, 'testing', args)
-    print('---> Testing Image and Masks Generated with shape {}'.format(test_imgs.shape))
+    prepare_dataset(list_of_images[:train_ind_lim], list_of_masks[:train_ind_lim], 'train', args)
+    prepare_dataset(list_of_images[train_ind_lim:], list_of_masks[train_ind_lim:], 'test', args)
 
 
 def prepare_dataset(images, masks, mode, args):
-    split_ratio, rots, resize_size, cropsize, saveloc = args.train_val_split, args.rotations, args.ResizeSize, args.CropSize, args.saveloc
+    rots, resize_size, crop_size, saveloc = args.rotations, args.ResizeSize, args.CropSize, args.saveloc
 
     resize_function = Resize(resize_size)
-    five_crop_function = FiveCrop(size=(cropsize, cropsize))
-    train_ind_lim = int(len(images) * split_ratio)
+    five_crop_function = FiveCrop(size=(crop_size, crop_size))
 
-    img_file = open_memmap(os.path.join(saveloc, f'resize_five_crop_images_{mode}.npy'), mode='w',
-                           dtype=float, shape=(len(images) * 5, 3, resize_size, resize_size))
-    mask_file = open_memmap(os.path.join(saveloc, f'resize_five_crop_masks_{mode}.npy'), mode='w',
-                            dtype=float, shape=(len(images) * 5, 1, resize_size, resize_size))
+    nbatch = 5 * (len(rots) + 1)
 
-    if mode == 'training':
-        consider_images = images[:train_ind_lim]
-        consider_masks = masks[:train_ind_lim]
-    elif mode == 'testing':
-        consider_images = images[train_ind_lim:]
-        consider_masks = masks[train_ind_lim:]
+    img_file = open_memmap(os.path.join(saveloc, f'resize_five_crop_images_{mode}.npy'), mode='w+',
+                           dtype=np.uint8, shape=(len(images) * nbatch, 3, crop_size, crop_size))
+    mask_file = open_memmap(os.path.join(saveloc, f'resize_five_crop_masks_{mode}.npy'), mode='w+',
+                            dtype=np.uint8, shape=(len(images) * nbatch, 1, crop_size, crop_size))
 
-    for i, (IMAGE, MASK) in enumerate(tqdm.tqdm(zip(consider_images, consider_masks))):
+    for i, (IMAGE, MASK) in enumerate(tqdm.tqdm(zip(images, masks),
+                                                ascii=True,
+                                                desc=f'Saving {mode} data',
+                                                total=len(images))):
         IMAGE_ARRAY = []
         MASK_ARRAY = []
-        IM_data = read_image(IMAGE) / 255.
-        MASK_data = read_image(MASK) / 255.
+        IM_data = read_image(IMAGE)  # save the image as uint8 to save space
+        MASK_data = read_image(MASK) / 255.  # normalize the mask to 0-1
         MASK_data[np.where(MASK_data > 0)] = 1
 
         resize_image = resize_function(IM_data)
-        resize_mask = resize_function(MASK_data.unsqueeze(0))
+        resize_mask = resize_function(MASK_data)
         im_crops = five_crop_function(resize_image)
         mask_crops = five_crop_function(resize_mask)
+
         for each_im_crop, each_mask_crop in zip(im_crops, mask_crops):
             IMAGE_ARRAY.append(each_im_crop.numpy())
             MASK_ARRAY.append(each_mask_crop.numpy())
@@ -83,8 +83,8 @@ def prepare_dataset(images, masks, mode, args):
                 IMAGE_ARRAY.append(auged_image.numpy())
                 MASK_ARRAY.append(auged_mask.numpy())
 
-        img_file[i * 5: (i + 1) * 5, :] = IMAGE_ARRAY
-        mask_file[i * 5: (i + 1) * 5, :] = MASK_ARRAY
+        img_file[i * nbatch: (i + 1) * nbatch, :] = np.asarray(IMAGE_ARRAY)
+        mask_file[i * nbatch: (i + 1) * nbatch, :] = np.asarray(MASK_ARRAY)
 
 
 if __name__ == '__main__':
