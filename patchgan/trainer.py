@@ -7,30 +7,10 @@ from torch.optim.lr_scheduler import ExponentialLR, ReduceLROnPlateau
 from .losses import fc_tversky, adv_loss
 from collections import defaultdict
 import numpy as np
+from .utils import weights_init
 
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-
-# custom weights initialization called on generator and discriminator
-# scaling here means std
-def weights_init(net, init_type='normal', scaling=0.02):
-    """Initialize network weights.
-    Parameters:
-        net (network)   -- network to be initialized
-        init_type (str) -- the name of an initialization method: normal | xavier | kaiming | orthogonal
-        init_gain (float)    -- scaling factor for normal, xavier and orthogonal.
-    We use 'normal' in the original pix2pix and CycleGAN paper. But xavier and kaiming might
-    work better for some applications. Feel free to try yourself.
-    """
-    def init_func(m):  # define the initialization function
-        classname = m.__class__.__name__
-        if hasattr(m, 'weight') and (classname.find('Conv')) != -1:
-            torch.nn.init.normal_(m.weight.data, 0.0, scaling)
-        # BatchNorm Layer's weight is not a matrix; only normal distribution applies.
-        elif classname.find('BatchNorm') != -1:
-            torch.nn.init.normal_(m.weight.data, 1.0, scaling)
-            torch.nn.init.constant_(m.bias.data, 0.0)
 
 
 class Trainer:
